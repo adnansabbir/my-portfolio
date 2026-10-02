@@ -11,6 +11,8 @@
 
 	const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+	const isMobileViewport = !window.matchMedia('(min-width: 768px)').matches;
+
 	const supportsWebGL = (() => {
 		try {
 			const canvas = document.createElement('canvas');
@@ -22,14 +24,23 @@
 
 	const getTheme = () => (document.documentElement.classList.contains('dark') ? fluidThemes.dark : fluidThemes.light);
 
-	// Defer fetching and starting the WebGL library until the main thread
-	// is idle, so it doesn't compete with the hero text for first paint.
 	const runWhenIdle = window.requestIdleCallback ?? ((cb: IdleRequestCallback) => setTimeout(cb, 1));
 
-	if (!prefersReducedMotion && supportsWebGL) {
+	// Starting the simulation is a long main-thread task (shader compile +
+	// first frames); waiting for load too keeps it off the page's Total
+	// Blocking Time instead of competing with earlier page activity.
+	const runWhenLoadedAndIdle = (cb: () => void) => {
+		if (document.readyState === 'complete') {
+			runWhenIdle(cb);
+		} else {
+			window.addEventListener('load', () => runWhenIdle(cb), { once: true });
+		}
+	};
+
+	if (!prefersReducedMotion && !isMobileViewport && supportsWebGL) {
 		const container = document.getElementById('fluid-container') as HTMLElement;
 
-		runWhenIdle(() => {
+		runWhenLoadedAndIdle(() => {
 			import('webgl-fluid-enhanced').then(({ default: WebGLFluidEnhanced }) => {
 				const theme = getTheme();
 
